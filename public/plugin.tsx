@@ -45,6 +45,8 @@ import {
   setExpressions,
   setHttp,
   setAssistantService,
+  setDashboard,
+  setDashboardVersion,
   setTimeFilter,
   setLocalStorage,
 } from './services';
@@ -74,8 +76,12 @@ import {
   INDEX_PATTERN_URL_SEARCH_KEY,
 } from './components/visualization/text2viz';
 import { DEFAULT_DATA, createStorage } from '../../../src/plugins/data/common';
+import { registerGenerateDashboardUIAction } from './ui_actions';
+import { InputPanel } from './components/text_to_dashboard/input_panel';
 
 export const [getCoreStart, setCoreStart] = createGetterSetter<CoreStart>('CoreStart');
+
+// export const TEXT_TO_DASHBOARD_APP_ID = 'textToDashboard'; // 新增应用ID
 
 // @ts-ignore
 const LazyIncontextInsightComponent = lazy(() => import('./components/incontext_insight'));
@@ -104,7 +110,7 @@ export class AssistantPlugin
   private resetChatSubscription: Subscription | undefined;
   private assistantService = new AssistantService();
 
-  constructor(initializerContext: PluginInitializerContext) {
+  constructor(private initializerContext: PluginInitializerContext) {
     this.config = initializerContext.config.get<ConfigSchema>();
     this.dataSourceService = new DataSourceService();
   }
@@ -375,7 +381,7 @@ export class AssistantPlugin
 
   public start(
     core: CoreStart,
-    { data, expressions, uiActions }: AssistantPluginStartDependencies
+    { data, expressions, uiActions, dashboard }: AssistantPluginStartDependencies
   ): AssistantStart {
     const assistantServiceStart = this.assistantService.start(core.http);
     setCoreStart(core);
@@ -384,6 +390,7 @@ export class AssistantPlugin
     setConfigSchema(this.config);
     setUiActions(uiActions);
     setAssistantService(assistantServiceStart);
+    setDashboard(dashboard);
     setLocalStorage(createStorage({ engine: window.localStorage, prefix: 'dashboardsAssistant.' }));
 
     if (this.config.text2viz.enabled) {
@@ -456,6 +463,17 @@ export class AssistantPlugin
         overlays: core.overlays,
       });
       setVisNLQSavedObjectLoader(savedVisNLQLoader);
+
+      registerGenerateDashboardUIAction({
+        core,
+        data,
+        uiActions,
+        assistantService: assistantServiceStart,
+      });
+
+      const opensearchDashboardsVersion = this.initializerContext.env.packageInfo.version;
+
+      setDashboardVersion({ version: opensearchDashboardsVersion });
     }
 
     setIndexPatterns(data.indexPatterns);

@@ -14,18 +14,22 @@ import {
   EuiEmptyPrompt,
   EuiFlexGroup,
   EuiFlexItem,
-  EuiFlyout,
-  EuiFlyoutBody,
-  EuiFlyoutFooter,
-  EuiFlyoutHeader,
   EuiLink,
   EuiLoadingContent,
   EuiLoadingLogo,
+  EuiPage,
+  EuiPageBody,
   EuiProgress,
   EuiText,
-  EuiTitle,
+  EuiBreadcrumb,
+  EuiHeaderLinks,
+  EuiButtonIcon,
+  EuiSpacer,
+  EuiPanel,
 } from '@elastic/eui';
-import { CoreStart } from '../../../../../src/core/public';
+import { i18n } from '@osd/i18n';
+import { useLocation } from 'react-router-dom';
+import { CoreStart, HeaderVariant } from '../../../../../src/core/public';
 import { DataPublicPluginStart, IndexPattern } from '../../../../../src/plugins/data/public';
 import { Pipeline } from '../../utils/pipeline/pipeline';
 import { PPLSampleTask } from '../../utils/pipeline/ppl_sample_task';
@@ -36,69 +40,154 @@ import { Text2VegaTask } from '../../utils/pipeline/text_to_vega_task';
 import { getVisNLQSavedObjectLoader } from '../../vis_nlq/saved_object_loader';
 import { VisNLQSavedObject } from '../../vis_nlq/types';
 import { createDashboard } from './create_dashboard';
+import { useOpenSearchDashboards } from '../../../../../src/plugins/opensearch_dashboards_react/public';
+import { MountPointPortal } from '../../../../../src/plugins/opensearch_dashboards_react/public';
+import { StartServices } from '../../types';
+import { SourceSelector } from '../visualization/source_selector';
 
-interface Props {
-  dataSourceId?: string;
-  core: CoreStart;
-  data: DataPublicPluginStart;
-  indexPattern: IndexPattern;
-  onClose: () => void;
-}
+// interface Props {
+//   // Props are now optional since they're passed via URL
+// }
 
 type Status = 'INSIGHTS_LOADING' | 'INSIGHTS_LOADED' | 'DASHBOARDS_CREATING' | 'DASHBOARDS_CREATED';
 
-export const InputPanel = (props: Props) => {
+export const InputPanel = () => {
+  const {
+    services: {
+      application,
+      chrome,
+      notifications,
+      data,
+      http,
+      uiSettings,
+      savedObjects,
+      setHeaderActionMenu,
+    },
+  } = useOpenSearchDashboards<StartServices>();
+  const { search } = useLocation();
+  const searchParams = new URLSearchParams(search);
+  const indexPatternId = searchParams.get('indexPatternId') || '';
+  const dataSourceId = searchParams.get('dataSourceId');
+  const [indexPattern, setIndexPattern] = useState<IndexPattern | null>(null);
   const [dataInsights, setDataInsights] = useState<Record<string, string[]>>({});
   const [selectedInsights, setSelectedInsights] = useState<string[]>([]);
   const [updateMessages, setUpdateMessages] = useState<EuiCommentProps[]>([]);
   const [panelStatus, setPanelStatus] = useState<Status>('INSIGHTS_LOADING');
   const dataInsightsPipeline = useRef<Pipeline | null>(null);
+  const useUpdatedUX = uiSettings.get('home:useNewHomePage');
 
-  if (dataInsightsPipeline.current === null) {
+  // Load index pattern from URL parameter
+  useEffect(() => {
+    if (indexPatternId) {
+      data.indexPatterns
+        .get(indexPatternId)
+        // .then(setIndexPattern)
+        .then((pattern) => {
+          console.log('Index pattern loaded:', pattern);
+          setIndexPattern(pattern);
+        })
+        .catch((e) => {
+          console.error('Failed to load index pattern:', e);
+          notifications.toasts.addDanger({
+            title: i18n.translate('dashboardAssistant.feature.text2dash.loadFailed', {
+              defaultMessage: 'Failed to load index pattern: {id}',
+              values: { id: indexPatternId },
+            }),
+          });
+        });
+    }
+  }, [indexPatternId, data.indexPatterns, notifications]);
+
+  if (dataInsightsPipeline.current === null && indexPattern) {
+    console.log('Creating dataInsightsPipeline for index:', indexPattern.getIndex());
     dataInsightsPipeline.current = new Pipeline([
-      new PPLSampleTask(props.data.search),
-      new DataInsightsTask(props.core.http),
+      new PPLSampleTask(data.search),
+      new DataInsightsTask(http),
     ]);
   }
 
+  // Subscribe to status$
   useEffect(() => {
     let subscription: Subscription;
     if (dataInsightsPipeline.current) {
-      subscription = dataInsightsPipeline.current.status$.subscribe((status) => {
-        setPanelStatus(status === 'RUNNING' ? 'INSIGHTS_LOADING' : 'INSIGHTS_LOADED');
+      console.log('Subscribing to status$ for pipeline');
+      subscription = dataInsightsPipeline.current.status$.subscribe({
+        next: (status) => {
+          console.log('Pipeline status:', status);
+          setPanelStatus(status === 'RUNNING' ? 'INSIGHTS_LOADING' : 'INSIGHTS_LOADED');
+        },
+        error: (err) => {
+          console.error('Pipeline status error:', err);
+          setPanelStatus('INSIGHTS_LOADED');
+          notifications.toasts.addDanger({
+            title: 'Failed to generate insights',
+            text: err.message || 'An error occurred while generating insights',
+          });
+        },
+        complete: () => {
+          console.log('Pipeline status$ completed');
+        },
       });
     }
-
     return () => {
       if (subscription) {
+        console.log('Unsubscribing from status$');
         subscription.unsubscribe();
       }
     };
-  }, []);
+  }, [indexPattern]);
 
+  // Subscribe to output$
   useEffect(() => {
     let subscription: Subscription;
     if (dataInsightsPipeline.current) {
-      subscription = dataInsightsPipeline.current.output$.subscribe((output) => {
-        setDataInsights(output.dataInsights);
+      console.log('Subscribing to output$ for pipeline');
+      subscription = dataInsightsPipeline.current.output$.subscribe({
+        next: (output) => {
+          console.log('Pipeline output:', output);
+          setDataInsights(output.dataInsights);
+        },
+        error: (err) => {
+          console.error('Pipeline output error:', err);
+          notifications.toasts.addDanger({
+            title: 'Failed to generate insights',
+            text: err.message || 'An error occurred while generating insights',
+          });
+        },
+        complete: () => {
+          console.log('Pipeline output$ completed');
+        },
       });
     }
-
     return () => {
       if (subscription) {
+        console.log('Unsubscribing from output$');
         subscription.unsubscribe();
       }
     };
-  }, []);
+  }, [indexPattern]);
 
   useEffect(() => {
-    if (dataInsightsPipeline.current) {
+    if (dataInsightsPipeline.current && indexPattern) {
+      console.log(
+        'Running pipeline with PPL:',
+        `source=${indexPattern.getIndex()}`,
+        'dataSourceId:',
+        dataSourceId
+      );
       dataInsightsPipeline.current.run({
-        ppl: `source=${props.indexPattern.getIndex()}`,
-        dataSourceId: props.dataSourceId,
+        ppl: `source=${indexPattern.getIndex()}`,
+        dataSourceId,
       });
+    } else {
+      console.log(
+        'Pipeline not run: dataInsightsPipeline.current:',
+        !!dataInsightsPipeline.current,
+        'indexPattern:',
+        !!indexPattern
+      );
     }
-  }, [props.indexPattern, props.dataSourceId]);
+  }, [indexPattern, dataSourceId]);
 
   const onToggle = useCallback(
     (item: string) => {
@@ -114,6 +203,7 @@ export const InputPanel = (props: Props) => {
   );
 
   const onGenerate = useCallback(async () => {
+    if (!indexPattern) return;
     setPanelStatus('DASHBOARDS_CREATING');
     setUpdateMessages([
       {
@@ -127,19 +217,19 @@ export const InputPanel = (props: Props) => {
 
     for (const insight of selectedInsights) {
       const pipeline = new Pipeline([
-        new Text2PPLTask(props.core.http),
-        new PPLSampleTask(props.data.search),
-        new Text2VegaTask(props.core.http, props.core.savedObjects),
+        new Text2PPLTask(http),
+        new PPLSampleTask(data.search),
+        new Text2VegaTask(http, savedObjects),
       ]);
       try {
         const [inputQuestion, inputInstruction] = insight.split('//');
         // generate vega spec
         // TODO: validate output.vega presence
         const output = await pipeline.runOnce({
-          index: props.indexPattern.getIndex(),
+          index: indexPattern.getIndex(),
           inputQuestion,
           inputInstruction,
-          dataSourceId: props.dataSourceId,
+          dataSourceId,
         });
         const visTitle = output?.vega?.title;
         const visDescription = output?.vega?.description;
@@ -157,14 +247,14 @@ export const InputPanel = (props: Props) => {
           input: inputQuestion,
           instruction: inputInstruction,
         });
-        savedVis.searchSourceFields = { index: props.indexPattern };
+        savedVis.searchSourceFields = { index: indexPattern };
         savedVis.title = visTitle;
         savedVis.description = visDescription;
         const id = await savedVis.save({});
         visualizations.push({ id, type: 'visualization-nlq' });
 
-        const url = props.core.application.getUrlForApp('text2viz', {
-          path: 'edit/031263c0-b3a4-11ef-82ed-0f7ea3b11071',
+        const url = application.getUrlForApp('text2viz', {
+          path: `edit/${id}`,
         });
 
         setUpdateMessages((messages) => [
@@ -224,7 +314,7 @@ export const InputPanel = (props: Props) => {
     try {
       // create dashboard
       const dashboardId = await createDashboard(visualizations);
-      const url = props.core.application.getUrlForApp('dashboards', {
+      const url = application.getUrlForApp('dashboards', {
         path: `#/view/${dashboardId}`,
       });
       setUpdateMessages((messages) => [
@@ -272,24 +362,124 @@ export const InputPanel = (props: Props) => {
     }
 
     setPanelStatus('DASHBOARDS_CREATED');
-  }, [
-    props.core.http,
-    props.core.savedObjects,
-    props.data,
-    selectedInsights,
-    props.dataSourceId,
-    props.indexPattern,
-    props.core.application,
-  ]);
+  }, [http, savedObjects, data, selectedInsights, dataSourceId, indexPattern, application]);
+
+  // Set breadcrumbs
+  useEffect(() => {
+    // const useUpdatedUX = uiSettings.get('home:useNewHomePage');
+    const pageTitle = i18n.translate('dashboardAssistant.feature.text2dash.title', {
+      defaultMessage: 'New Dashboard',
+    });
+    const breadcrumbs: EuiBreadcrumb[] = [
+      {
+        text: i18n.translate('dashboardAssistant.feature.text2dash.breadcrumbs.dashboards', {
+          defaultMessage: 'Dashboards',
+        }),
+        onClick: () => {
+          application.navigateToApp('dashboards');
+        },
+      },
+    ];
+    if (!useUpdatedUX) {
+      breadcrumbs.push({
+        text: pageTitle,
+      });
+    }
+    chrome.setBreadcrumbs(breadcrumbs);
+  }, [chrome, application, uiSettings]);
+
+  useEffect(() => {
+    chrome.setHeaderVariant(HeaderVariant.APPLICATION);
+    return () => {
+      chrome.setHeaderVariant();
+    };
+  }, [chrome]);
+
+  const getInputSection = () => {
+    return (
+      <>
+        <EuiFlexGroup alignItems="center" gutterSize="s">
+          <EuiFlexItem grow={2} style={{ width: 0 }}>
+            <SourceSelector
+              selectedSourceId={indexPatternId}
+              onChange={(ds) => {
+                const newParams = new URLSearchParams(search);
+                newParams.set('indexPatternId', ds.value);
+                application.navigateToUrl(
+                  application.getUrlForApp('dashboards', {
+                    path: `/text2dash?${newParams.toString()}`,
+                  })
+                );
+              }}
+            />
+          </EuiFlexItem>
+        </EuiFlexGroup>
+      </>
+    );
+  };
+
+  if (!indexPattern) {
+    return (
+      <EuiPage>
+        <EuiPageBody>
+          <EuiEmptyPrompt
+            iconType="alert"
+            iconColor="danger"
+            title={<h2>Index Pattern Not Found</h2>}
+            body={
+              <EuiText size="s">
+                <p>Unable to load the specified index pattern.</p>
+              </EuiText>
+            }
+          />
+        </EuiPageBody>
+      </EuiPage>
+    );
+  }
 
   return (
-    <EuiFlyout onClose={props.onClose}>
-      <EuiFlyoutHeader hasBorder>
-        <EuiTitle size="m">
-          <h2>Suggested analytics</h2>
-        </EuiTitle>
-      </EuiFlyoutHeader>
-      <EuiFlyoutBody>
+    <EuiPage className="text2dash__page" direction="column">
+      <MountPointPortal setMountPoint={setHeaderActionMenu}>
+        <EuiFlexGroup alignItems="center" gutterSize="s" style={{ flexGrow: 0, paddingTop: '4px' }}>
+          <EuiHeaderLinks data-test-subj="text2dash-top-nav">
+            {/* {useUpdatedUX && ( */}
+            <EuiText size="s">
+              {i18n.translate('dashboardAssistant.feature.text2dash.title', {
+                defaultMessage: 'New Dashboard',
+              })}
+            </EuiText>
+            {/* )} */}
+            {/* <EuiButtonIcon
+              title={i18n.translate('dashboardAssistant.feature.text2dash.generate', {
+                defaultMessage: 'Generate dashboard',
+              })}
+              aria-label="generate"
+              display="base"
+              iconType="save"
+              size="s"
+              color={useUpdatedUX ? 'text' : 'primary'}
+              onClick={onGenerate}
+              isDisabled={
+                selectedInsights.length === 0 ||
+                !indexPattern ||
+                panelStatus === 'DASHBOARDS_CREATING'
+              }
+            /> */}
+          </EuiHeaderLinks>
+          {/* {useUpdatedUX && */}
+          {getInputSection()}
+          {/* } */}
+        </EuiFlexGroup>
+      </MountPointPortal>
+      {!useUpdatedUX && (
+        <>
+          <EuiFlexGroup alignItems="center" gutterSize="s" style={{ flexGrow: 0 }}>
+            {getInputSection()}
+          </EuiFlexGroup>
+          <EuiSpacer size="s" />
+        </>
+      )}
+      <EuiPageBody>
         {panelStatus === 'INSIGHTS_LOADING' && (
           <EuiEmptyPrompt
             icon={<EuiLoadingLogo logo="visPie" size="xl" />}
@@ -300,6 +490,7 @@ export const InputPanel = (props: Props) => {
           <>
             {Object.keys(dataInsights).map((key) => (
               <CheckableDataList
+                key={key}
                 title={key}
                 items={dataInsights[key]}
                 selection={selectedInsights}
@@ -312,22 +503,24 @@ export const InputPanel = (props: Props) => {
           <EuiCommentList comments={updateMessages} />
         )}
         {panelStatus === 'DASHBOARDS_CREATING' && <EuiLoadingContent lines={2} />}
-      </EuiFlyoutBody>
-      {panelStatus === 'DASHBOARDS_CREATING' && <EuiProgress size="xs" color="accent" />}
-      <EuiFlyoutFooter>
-        <EuiFlexGroup justifyContent="spaceBetween">
-          <EuiFlexItem grow={false}>
-            <EuiButton
-              fill
-              onClick={onGenerate}
-              isLoading={panelStatus === 'DASHBOARDS_CREATING'}
-              isDisabled={selectedInsights.length === 0}
-            >
-              Generate dashboard
-            </EuiButton>
-          </EuiFlexItem>
-        </EuiFlexGroup>
-      </EuiFlyoutFooter>
-    </EuiFlyout>
+        {panelStatus === 'DASHBOARDS_CREATING' && <EuiProgress size="xs" color="accent" />}
+        {panelStatus !== 'INSIGHTS_LOADING' && (
+          <>
+            <EuiFlexGroup justifyContent="flexEnd">
+              <EuiFlexItem grow={false}>
+                <EuiButton
+                  fill
+                  onClick={onGenerate}
+                  isLoading={panelStatus === 'DASHBOARDS_CREATING'}
+                  isDisabled={selectedInsights.length === 0 || !indexPattern}
+                >
+                  Generate dashboard
+                </EuiButton>
+              </EuiFlexItem>
+            </EuiFlexGroup>
+          </>
+        )}
+      </EuiPageBody>
+    </EuiPage>
   );
 };

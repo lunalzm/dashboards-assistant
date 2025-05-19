@@ -16,7 +16,7 @@ import { AI_ASSISTANT_QUERY_EDITOR_TRIGGER } from './ui_triggers';
 import { CoreStart } from '../../../src/core/public';
 import { DataPublicPluginStart } from '../../../src/plugins/data/public';
 import { toMountPoint } from '../../../src/plugins/opensearch_dashboards_react/public';
-import { InputPanel } from './components/text_to_dashboard/input_panel';
+import { TEXT2DASH_APP_ID } from './text2dash';
 
 interface Services {
   core: CoreStart;
@@ -51,25 +51,18 @@ export function registerGenerateDashboardUIAction(services: Services) {
     },
     execute: async (context) => {
       if (context.datasetId && context.datasetType === DEFAULT_DATA.SET_TYPES.INDEX_PATTERN) {
-        const indexPattern = await services.data.indexPatterns.get(context.datasetId);
-        const flyout = services.core.overlays.openFlyout(
-          toMountPoint(
-            <InputPanel
-              indexPattern={indexPattern}
-              dataSourceId={context.dataSourceId}
-              core={services.core}
-              data={services.data}
-              onClose={() => flyout.close()}
-            />
-          )
+        const url = new URL(
+          services.core.application.getUrlForApp(TEXT2DASH_APP_ID, {
+            absolute: true,
+            path: '/',
+          })
         );
-        // const url = new URL(
-        //   services.core.application.getUrlForApp(TEXT_TO_DASHBOARD_APP_ID, { absolute: true })
-        // );
-        // if (context.datasetId && context.datasetType === DEFAULT_DATA.SET_TYPES.INDEX_PATTERN) {
-        //   url.searchParams.set('indexPatternId', context.datasetId);
-        // }
-        // services.core.application.navigateToUrl(url.toString());
+        url.searchParams.set('indexPatternId', context.datasetId);
+        if (context.dataSourceId) {
+          url.searchParams.set('dataSourceId', context.dataSourceId);
+        }
+        console.log('Navigating to:', url.toString());
+        services.core.application.navigateToUrl(url.toString());
       }
     },
   });

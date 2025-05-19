@@ -64,6 +64,7 @@ import { AssistantService } from './services/assistant_service';
 import { ActionContextMenu } from './components/ui_action_context_menu';
 import { AI_ASSISTANT_QUERY_EDITOR_TRIGGER, bootstrap } from './ui_triggers';
 import { TEXT2VIZ_APP_ID } from './text2viz';
+import { TEXT2DASH_APP_ID } from './text2dash';
 import { VIS_NLQ_APP_ID, VIS_NLQ_SAVED_OBJECT } from '../common/constants/vis_type_nlq';
 import {
   createVisNLQSavedObjectLoader,
@@ -77,11 +78,8 @@ import {
 } from './components/visualization/text2viz';
 import { DEFAULT_DATA, createStorage } from '../../../src/plugins/data/common';
 import { registerGenerateDashboardUIAction } from './ui_actions';
-import { InputPanel } from './components/text_to_dashboard/input_panel';
 
 export const [getCoreStart, setCoreStart] = createGetterSetter<CoreStart>('CoreStart');
-
-// export const TEXT_TO_DASHBOARD_APP_ID = 'textToDashboard'; // 新增应用ID
 
 // @ts-ignore
 const LazyIncontextInsightComponent = lazy(() => import('./components/incontext_insight'));
@@ -229,6 +227,36 @@ export class AssistantPlugin
             };
           } else {
             const { renderAppNotFound } = await import('./text2viz');
+            return renderAppNotFound(params);
+          }
+        },
+      });
+
+      core.application.register({
+        id: TEXT2DASH_APP_ID,
+        title: i18n.translate('dashboardAssistant.feature.text2dash', {
+          defaultMessage: 'Data Insights Dashboard',
+        }),
+        navLinkStatus: AppNavLinkStatus.hidden,
+        mount: async (params: AppMountParameters) => {
+          const [coreStart, pluginsStart] = await core.getStartServices();
+          const assistantEnabled = coreStart.application.capabilities?.assistant?.enabled === true;
+          if (assistantEnabled) {
+            params.element.classList.add('text2dash-wrapper');
+            const { renderText2DashApp } = await import('./text2dash');
+            const unmount = renderText2DashApp(params, {
+              ...pluginsStart,
+              ...coreStart,
+              setHeaderActionMenu: params.setHeaderActionMenu,
+              config: this.config,
+            });
+
+            return () => {
+              unmount();
+              params.element.classList.remove('text2dash-wrapper');
+            };
+          } else {
+            const { renderAppNotFound } = await import('./text2dash');
             return renderAppNotFound(params);
           }
         },

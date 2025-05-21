@@ -35,7 +35,6 @@ export class DataInsightsTask extends Task<Input, Input & { dataInsights: string
       }),
       query: { dataSourceId },
     });
-    console.log('res: ', res);
     return res;
   }
 }

@@ -61,7 +61,6 @@ export function registerGenerateDashboardUIAction(services: Services) {
         if (context.dataSourceId) {
           url.searchParams.set('dataSourceId', context.dataSourceId);
         }
-        console.log('Navigating to:', url.toString());
         services.core.application.navigateToUrl(url.toString());
       }
     },

@@ -153,7 +153,6 @@ export function registerText2VizRoutes(router: IRouter, assistantService: Assist
           }
         );
 
-        // console.log(response.body.inference_results[0].output[0].result);
         let textContent = response.body.inference_results[0].output[0].result;
 
         // extra content between tag <vega-lite></vega-lite>

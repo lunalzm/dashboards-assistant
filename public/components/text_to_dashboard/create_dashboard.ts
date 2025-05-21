@@ -6,6 +6,8 @@
 import uuid from 'uuid';
 
 import { getDashboard, getDashboardVersion } from '../../services';
+import { DashboardUrlGeneratorState } from '../../../../../src/plugins/dashboard/public/url_generator';
+import { setStateToOsdUrl } from '../../../../../src/plugins/opensearch_dashboards_utils/public';
 
 interface PanelConfig {
   id: string;
@@ -59,5 +61,32 @@ export const createDashboard = async (objects: Array<{ id: string; type: string 
   dashboard.title = `[AI Generated] - ${uuid.v4()}`;
   dashboard.description = 'The dashboard was created by OpenSearch dashboard assistant';
 
-  return await dashboard.save();
+  const dashboardUrlGenerator = dashboardService.dashboardUrlGenerator;
+  const state: DashboardUrlGeneratorState = {};
+  const dashboardUrl = await dashboardUrlGenerator?.createUrl(state);
+  if (!dashboardUrl) {
+    throw new Error('Failed to generate dashboard URL');
+  }
+
+  const appState = {
+    panels: panels.map((panel) => ({
+      embeddableConfig: {},
+      gridData: {
+        h: panel.gridData.h,
+        i: panel.gridData.i,
+        w: panel.gridData.w,
+        x: panel.gridData.x,
+        y: panel.gridData.y,
+      },
+      id: panel.id,
+      panelIndex: panel.panelIndex,
+      type: panel.type,
+      version: panel.version,
+    })),
+  };
+
+  const finalUrl = setStateToOsdUrl('_a', appState, { useHash: true }, dashboardUrl);
+  dashboard.url = finalUrl;
+
+  return dashboard;
 };

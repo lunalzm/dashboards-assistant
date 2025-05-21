@@ -45,10 +45,6 @@ import { MountPointPortal } from '../../../../../src/plugins/opensearch_dashboar
 import { StartServices } from '../../types';
 import { SourceSelector } from '../visualization/source_selector';
 
-// interface Props {
-//   // Props are now optional since they're passed via URL
-// }
-
 type Status = 'INSIGHTS_LOADING' | 'INSIGHTS_LOADED' | 'DASHBOARDS_CREATING' | 'DASHBOARDS_CREATED';
 
 export const InputPanel = () => {
@@ -81,9 +77,7 @@ export const InputPanel = () => {
     if (indexPatternId) {
       data.indexPatterns
         .get(indexPatternId)
-        // .then(setIndexPattern)
         .then((pattern) => {
-          console.log('Index pattern loaded:', pattern);
           setIndexPattern(pattern);
         })
         .catch((e) => {
@@ -99,25 +93,20 @@ export const InputPanel = () => {
   }, [indexPatternId, data.indexPatterns, notifications]);
 
   if (dataInsightsPipeline.current === null && indexPattern) {
-    console.log('Creating dataInsightsPipeline for index:', indexPattern.getIndex());
     dataInsightsPipeline.current = new Pipeline([
       new PPLSampleTask(data.search),
       new DataInsightsTask(http),
     ]);
   }
 
-  // Subscribe to status$
   useEffect(() => {
     let subscription: Subscription;
     if (dataInsightsPipeline.current) {
-      console.log('Subscribing to status$ for pipeline');
       subscription = dataInsightsPipeline.current.status$.subscribe({
         next: (status) => {
-          console.log('Pipeline status:', status);
           setPanelStatus(status === 'RUNNING' ? 'INSIGHTS_LOADING' : 'INSIGHTS_LOADED');
         },
         error: (err) => {
-          console.error('Pipeline status error:', err);
           setPanelStatus('INSIGHTS_LOADED');
           notifications.toasts.addDanger({
             title: 'Failed to generate insights',
@@ -131,24 +120,19 @@ export const InputPanel = () => {
     }
     return () => {
       if (subscription) {
-        console.log('Unsubscribing from status$');
         subscription.unsubscribe();
       }
     };
   }, [indexPattern]);
 
-  // Subscribe to output$
   useEffect(() => {
     let subscription: Subscription;
     if (dataInsightsPipeline.current) {
-      console.log('Subscribing to output$ for pipeline');
       subscription = dataInsightsPipeline.current.output$.subscribe({
         next: (output) => {
-          console.log('Pipeline output:', output);
           setDataInsights(output.dataInsights);
         },
         error: (err) => {
-          console.error('Pipeline output error:', err);
           notifications.toasts.addDanger({
             title: 'Failed to generate insights',
             text: err.message || 'An error occurred while generating insights',
@@ -161,7 +145,6 @@ export const InputPanel = () => {
     }
     return () => {
       if (subscription) {
-        console.log('Unsubscribing from output$');
         subscription.unsubscribe();
       }
     };
@@ -169,23 +152,10 @@ export const InputPanel = () => {
 
   useEffect(() => {
     if (dataInsightsPipeline.current && indexPattern) {
-      console.log(
-        'Running pipeline with PPL:',
-        `source=${indexPattern.getIndex()}`,
-        'dataSourceId:',
-        dataSourceId
-      );
       dataInsightsPipeline.current.run({
         ppl: `source=${indexPattern.getIndex()}`,
         dataSourceId,
       });
-    } else {
-      console.log(
-        'Pipeline not run: dataInsightsPipeline.current:',
-        !!dataInsightsPipeline.current,
-        'indexPattern:',
-        !!indexPattern
-      );
     }
   }, [indexPattern, dataSourceId]);
 
@@ -313,33 +283,9 @@ export const InputPanel = () => {
 
     try {
       // create dashboard
-      const dashboardId = await createDashboard(visualizations);
-      const url = application.getUrlForApp('dashboards', {
-        path: `#/view/${dashboardId}`,
-      });
-      setUpdateMessages((messages) => [
-        ...messages,
-        {
-          username: 'Dashboards assistant',
-          event: (
-            <EuiFlexGroup responsive={false} alignItems="center" gutterSize="s">
-              <EuiFlexItem grow={false}>
-                <EuiText>
-                  created dashboard{' '}
-                  <EuiLink href={url} target="_blank">
-                    view
-                  </EuiLink>
-                </EuiText>
-              </EuiFlexItem>
-              <EuiFlexItem grow={false}>
-                <EuiBadge color="success">success</EuiBadge>
-              </EuiFlexItem>
-            </EuiFlexGroup>
-          ),
-          type: 'update',
-          timelineIcon: 'check',
-        },
-      ]);
+      const dashboard = await createDashboard(visualizations);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      application.navigateToUrl(dashboard.url);
     } catch (e) {
       setUpdateMessages((messages) => [
         ...messages,

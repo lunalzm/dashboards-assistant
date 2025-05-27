@@ -231,7 +231,9 @@ export class AssistantPlugin
           }
         },
       });
+    }
 
+    if (this.config.text2dash.enabled) {
       core.application.register({
         id: TEXT2DASH_APP_ID,
         title: i18n.translate('dashboardAssistant.feature.text2dash', {
@@ -242,7 +244,6 @@ export class AssistantPlugin
           const [coreStart, pluginsStart] = await core.getStartServices();
           const assistantEnabled = coreStart.application.capabilities?.assistant?.enabled === true;
           if (assistantEnabled) {
-            params.element.classList.add('text2dash-wrapper');
             const { renderText2DashApp } = await import('./text2dash');
             const unmount = renderText2DashApp(params, {
               ...pluginsStart,
@@ -253,7 +254,6 @@ export class AssistantPlugin
 
             return () => {
               unmount();
-              params.element.classList.remove('text2dash-wrapper');
             };
           } else {
             const { renderAppNotFound } = await import('./text2dash');
@@ -262,7 +262,6 @@ export class AssistantPlugin
         },
       });
     }
-
     (async () => {
       const [coreStart, startDeps] = await core.getStartServices();
       if (!coreStart.application.capabilities.assistant?.chatEnabled) {
@@ -375,6 +374,7 @@ export class AssistantPlugin
         chat: this.config.chat.enabled,
         next: this.config.next.enabled,
         text2viz: this.config.text2viz.enabled,
+        text2dash: this.config.text2dash.enabled,
         alertInsight: this.config.alertInsight.enabled,
         smartAnomalyDetector: this.config.smartAnomalyDetector.enabled,
       }),
@@ -491,7 +491,9 @@ export class AssistantPlugin
         overlays: core.overlays,
       });
       setVisNLQSavedObjectLoader(savedVisNLQLoader);
+    }
 
+    if (this.config.text2dash.enabled) {
       registerGenerateDashboardUIAction({
         core,
         data,
